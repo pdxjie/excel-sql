@@ -10,16 +10,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
-
 /**
  * @Description: TODO::Need To Do
  * @Author: IT 派同学
@@ -36,6 +34,10 @@ public class FileSystemStorage implements ExcelStorage {
 
     @Resource
     private TypeConverter typeConverter;
+
+    private Path getWorkbookPath(String workbookName) {
+        return Paths.get(config.getStorage().getBasePath(), workbookName);
+    }
 
     @Override
     public boolean createWorkbook(String workbookName) {
@@ -474,6 +476,7 @@ public class FileSystemStorage implements ExcelStorage {
                     throw new RuntimeException("Sheet not found: " + sheetName);
                 }
 
+                // Get header row
                 Row headerRow = sheet.getRow(0);
                 if (headerRow == null) {
                     return 0;
@@ -484,33 +487,46 @@ public class FileSystemStorage implements ExcelStorage {
                     headers.add(ExcelUtils.getCellValueAsString(cell));
                 }
 
-                // Iterate in reverse to safely delete rows
-                for (int i = sheet.getLastRowNum(); i > 0; i--) {
-                    Row row = sheet.getRow(i);
+                // Collect rows to delete (in reverse order to avoid index issues)
+                List<Integer> rowsToDelete = new ArrayList<>();
+
+                for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                    Row row = sheet.getRow(rowIndex);
                     if (row == null) continue;
 
                     Map<String, Object> rowData = new HashMap<>();
-                    for (int j = 0; j < headers.size(); j++) {
-                        Cell cell = row.getCell(j);
+                    for (int colIndex = 0; colIndex < headers.size(); colIndex++) {
+                        String columnName = headers.get(colIndex);
+                        Cell cell = row.getCell(colIndex);
                         Object value = ExcelUtils.getCellValue(cell);
-                        rowData.put(headers.get(j), value);
+                        rowData.put(columnName, value);
                     }
 
                     if (matchesConditions(rowData, conditions)) {
-                        removeRow(sheet, i);
+                        rowsToDelete.add(rowIndex);
+                    }
+                }
+
+                // Delete rows in reverse order
+                Collections.reverse(rowsToDelete);
+                for (Integer rowIndex : rowsToDelete) {
+                    Row row = sheet.getRow(rowIndex);
+                    if (row != null) {
+                        sheet.removeRow(row);
                         deletedRows++;
                     }
                 }
 
-                // Save workbook if any deletion occurred
+                // Shift remaining rows up
                 if (deletedRows > 0) {
+                    // Save workbook
                     try (FileOutputStream fos = new FileOutputStream(workbookPath.toFile())) {
                         workbook.write(fos);
                     }
                 }
-
-                return deletedRows;
             }
+
+            return deletedRows;
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete data from sheet: " + sheetName, e);
         }
@@ -518,93 +534,182 @@ public class FileSystemStorage implements ExcelStorage {
 
     @Override
     public WorkbookMetadata getWorkbookMetadata(String workbookName) {
-        return null;
+        try {
+            Path workbookPath = getWorkbookPath(workbookName);
+
+            if (!Files.exists(workbookPath)) {
+                return null;
+            }
+
+            WorkbookMetadata metadata = new WorkbookMetadata();
+            metadata.setName(workbookName);
+            metadata.setPath(workbookPath.toString());
+            metadata.setSize(Files.size(workbookPath));
+
+            // Get file timestamps
+            metadata.setCreatedTime(
+                    LocalDateTime.ofInstant(
+                            Files.getLastModifiedTime(workbookPath).toInstant(),
+                            ZoneId.systemDefault()
+                    )
+            );
+            metadata.setModifiedTime(
+                    LocalDateTime.ofInstant(
+                            Files.getLastModifiedTime(workbookPath).toInstant(),
+                            ZoneId.systemDefault()
+                    )
+            );
+
+            // Determine format
+            metadata.setFormat(workbookName.endsWith(".csv") ? "csv" : "xlsx");
+
+            // Get sheet names
+            metadata.setSheetNames(listSheets(workbookName));
+
+            return metadata;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to get workbook metadata: " + workbookName, e);
+        }
     }
 
     @Override
     public SheetMetadata getSheetMetadata(String workbookName, String sheetName) {
-        return null;
+        try {
+            Path workbookPath = getWorkbookPath(workbookName);
+
+            if (!Files.exists(workbookPath)) {
+                return null;
+            }
+
+            try (FileInputStream fis = new FileInputStream(workbookPath.toFile());
+                 Workbook workbook = WorkbookFactory.create(fis)) {
+
+                Sheet sheet = workbook.getSheet(sheetName);
+                if (sheet == null) {
+                    return null;
+                }
+
+                SheetMetadata metadata = new SheetMetadata();
+                metadata.setName(sheetName);
+                metadata.setWorkbookName(workbookName);
+                metadata.setRowCount(sheet.getLastRowNum() + 1);
+
+                // Get column information
+                Row headerRow = sheet.getRow(0);
+                if (headerRow != null) {
+                    metadata.setColumnCount(headerRow.getLastCellNum());
+
+                    List<String> columnNames = new ArrayList<>();
+                    Map<String, String> columnTypes = new HashMap<>();
+
+                    for (Cell cell : headerRow) {
+                        String columnName = ExcelUtils.getCellValueAsString(cell);
+                        columnNames.add(columnName);
+
+                        // Infer column type from first data row
+                        Row firstDataRow = sheet.getRow(1);
+                        if (firstDataRow != null) {
+                            Cell dataCell = firstDataRow.getCell(cell.getColumnIndex());
+                            String type = inferColumnType(dataCell);
+                            columnTypes.put(columnName, type);
+                        } else {
+                            columnTypes.put(columnName, "STRING");
+                        }
+                    }
+
+                    metadata.setColumnNames(columnNames);
+                    metadata.setColumnTypes(columnTypes);
+                } else {
+                    metadata.setColumnCount(0);
+                    metadata.setColumnNames(Collections.emptyList());
+                    metadata.setColumnTypes(Collections.emptyMap());
+                }
+
+                // Set timestamps (using file modification time as approximation)
+                LocalDateTime fileTime = LocalDateTime.ofInstant(
+                        Files.getLastModifiedTime(workbookPath).toInstant(),
+                        ZoneId.systemDefault()
+                );
+                metadata.setCreatedTime(fileTime);
+                metadata.setModifiedTime(fileTime);
+
+                return metadata;
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to get sheet metadata: " + sheetName, e);
+        }
     }
 
+    // Helper methods
     private boolean matchesConditions(Map<String, Object> rowData, Map<String, Object> conditions) {
         if (conditions == null || conditions.isEmpty()) {
             return true;
         }
 
-        for (Map.Entry<String, Object> entry : conditions.entrySet()) {
-            String key = entry.getKey();
-            Object expected = entry.getValue();
-            Object actual = rowData.get(key);
+        for (Map.Entry<String, Object> condition : conditions.entrySet()) {
+            String columnName = condition.getKey();
+            Object expectedValue = condition.getValue();
+            Object actualValue = rowData.get(columnName);
 
-            // 支持 null 安全比较和字符串等价性
-            if (expected == null) {
-                if (actual != null) return false;
-            } else {
-                if (actual == null || !expected.toString().equalsIgnoreCase(actual.toString())) {
-                    return false;
-                }
+            if (!Objects.equals(actualValue, expectedValue)) {
+                return false;
             }
         }
 
         return true;
     }
 
-    private void removeRow(Sheet sheet, int rowIndex) {
-        int lastRowNum = sheet.getLastRowNum();
-        if (rowIndex >= 0 && rowIndex < lastRowNum) {
-            sheet.shiftRows(rowIndex + 1, lastRowNum, -1);
-        } else if (rowIndex == lastRowNum) {
-            Row removingRow = sheet.getRow(rowIndex);
-            if (removingRow != null) {
-                sheet.removeRow(removingRow);
-            }
-        }
-    }
-
     private List<Map<String, Object>> applySorting(List<Map<String, Object>> data, String orderBy) {
-        String[] parts = orderBy.trim().split("\\s+");
-        if (parts.length == 0) return data;
+        // Simple sorting implementation - can be enhanced
+        String[] parts = orderBy.split(" ");
+        String columnName = parts[0];
+        boolean ascending = parts.length == 1 || "ASC".equalsIgnoreCase(parts[1]);
 
-        String sortKey = parts[0];
-        boolean asc = parts.length < 2 || !"desc".equalsIgnoreCase(parts[1]);
+        return data.stream()
+                .sorted((a, b) -> {
+                    Object valueA = a.get(columnName);
+                    Object valueB = b.get(columnName);
 
-        data.sort((a, b) -> {
-            Object va = a.get(sortKey);
-            Object vb = b.get(sortKey);
+                    if (valueA == null && valueB == null) return 0;
+                    if (valueA == null) return ascending ? -1 : 1;
+                    if (valueB == null) return ascending ? 1 : -1;
 
-            if (va == null && vb == null) return 0;
-            if (va == null) return asc ? -1 : 1;
-            if (vb == null) return asc ? 1 : -1;
-
-            if (va instanceof Comparable && vb instanceof Comparable) {
-                return asc ? ((Comparable) va).compareTo(vb) : ((Comparable) vb).compareTo(va);
-            }
-
-            return asc ? va.toString().compareTo(vb.toString()) : vb.toString().compareTo(va.toString());
-        });
-
-        return data;
+                    @SuppressWarnings("unchecked")
+                    int result = ((Comparable<Object>) valueA).compareTo(valueB);
+                    return ascending ? result : -result;
+                })
+                .collect(Collectors.toList());
     }
 
     private List<Map<String, Object>> applyPagination(List<Map<String, Object>> data, int offset, Integer limit) {
-        int start = Math.min(offset, data.size());
-        int end = limit == null ? data.size() : Math.min(start + limit, data.size());
-        return data.subList(start, end);
-    }
+        int fromIndex = Math.max(0, offset);
+        int toIndex = limit != null ? Math.min(data.size(), fromIndex + limit) : data.size();
 
-    private Path getWorkbookPath(String workbookName) {
-        String basePath = config.getStorage().getBasePath();
-        if (workbookName == null || workbookName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Workbook name must not be null or empty");
+        if (fromIndex >= data.size()) {
+            return Collections.emptyList();
         }
 
-        // 默认添加扩展名（如果没有）
-        if (!workbookName.endsWith(".xlsx") && !workbookName.endsWith(".csv")) {
-            workbookName = workbookName + ".xlsx";
-        }
-
-        return Paths.get(basePath, workbookName);
+        return data.subList(fromIndex, toIndex);
     }
 
+    private String inferColumnType(Cell cell) {
+        if (cell == null) {
+            return "STRING";
+        }
 
+        switch (cell.getCellType()) {
+            case NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    return "DATE";
+                } else {
+                    return "NUMERIC";
+                }
+            case BOOLEAN:
+                return "BOOLEAN";
+            case FORMULA:
+                return "FORMULA";
+            default:
+                return "STRING";
+        }
+    }
 }
