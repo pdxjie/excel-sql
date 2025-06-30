@@ -1,0 +1,27 @@
+# application.yml
+excel:
+  sql:
+    storage:
+      base-path: /data/excel
+      index-path: /data/indexes
+    cache:
+      workbook-size: 50
+      sheet-size: 500
+      expire-minutes: 60
+    performance:
+      streaming-threshold: 10MB
+      async-enabled: true
+      max-pool-size: 20
+    parser:
+      type: antlr
+
+spring:
+  cache:
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=30m
+  task:
+    execution:
+      pool:
+        core-size: 10
+        max-size: 50
+        queue-capacity: 1000
