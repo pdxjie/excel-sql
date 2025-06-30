@@ -6,16 +6,17 @@ package com.excelsql.engine.parser.model;
  * @Date: 2025-06-30-22:40
  */
 public enum QueryType {
-    SELECT,
-    INSERT,
-    UPDATE,
-    DELETE,
     CREATE_WORKBOOK,
     CREATE_SHEET,
     DROP_WORKBOOK,
     DROP_SHEET,
-    ALTER_SHEET,
+    SELECT,
+    INSERT,
+    UPDATE,
+    DELETE,
     USE_WORKBOOK,
+    SHOW_WORKBOOKS,
+    SHOW_SHEETS,
     COPY_SHEET,
     RENAME_SHEET,
     MERGE_SHEETS,

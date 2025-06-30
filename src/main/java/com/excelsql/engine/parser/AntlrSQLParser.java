@@ -16,245 +16,235 @@ import java.util.regex.Pattern;
 @Component
 public class AntlrSQLParser implements SQLParser {
 
-    private static final Pattern SELECT_PATTERN = Pattern.compile(
-            "SELECT\\s+(.*?)\\s+FROM\\s+SHEET\\s+[`\"']?([^`\"'\\s]+)[`\"']?(?:\\s+WHERE\\s+(.*?))?(?:\\s+GROUP\\s+BY\\s+(.*?))?(?:\\s+ORDER\\s+BY\\s+(.*?))?(?:\\s+LIMIT\\s+(\\d+))?",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-    );
+    private static final Pattern CREATE_WORKBOOK_PATTERN =
+            Pattern.compile("CREATE\\s+WORKBOOK\\s+`([^`]+)`", Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern INSERT_PATTERN = Pattern.compile(
-            "INSERT\\s+INTO\\s+SHEET\\s+[`\"']?([^`\"'\\s]+)[`\"']?(?:\\s*\\(([^)]+)\\))?\\s+VALUES\\s*\\((.+)\\)",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-    );
+    private static final Pattern CREATE_SHEET_PATTERN =
+            Pattern.compile("CREATE\\s+SHEET\\s+`([^`]+)`\\s*(\\([^)]+\\))?", Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern UPDATE_PATTERN = Pattern.compile(
-            "UPDATE\\s+SHEET\\s+[`\"']?([^`\"'\\s]+)[`\"']?\\s+SET\\s+(.*?)(?:\\s+WHERE\\s+(.*?))?",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-    );
+    private static final Pattern SELECT_PATTERN =
+            Pattern.compile("SELECT\\s+(.*?)\\s+FROM\\s+SHEET\\s+`([^`]+)`(?:\\s+WHERE\\s+(.*?))?(?:\\s+GROUP\\s+BY\\s+(.*?))?(?:\\s+ORDER\\s+BY\\s+(.*?))?(?:\\s+LIMIT\\s+(\\d+)(?:\\s+OFFSET\\s+(\\d+))?)?",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    private static final Pattern DELETE_PATTERN = Pattern.compile(
-            "DELETE\\s+FROM\\s+SHEET\\s+[`\"']?([^`\"'\\s]+)[`\"']?(?:\\s+WHERE\\s+(.*?))?",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-    );
+    private static final Pattern INSERT_PATTERN =
+            Pattern.compile("INSERT\\s+INTO\\s+SHEET\\s+`([^`]+)`(?:\\s*\\(([^)]+)\\))?\\s+VALUES\\s*\\(([^)]+)\\)",
+                    Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern CREATE_WORKBOOK_PATTERN = Pattern.compile(
-            "CREATE\\s+WORKBOOK\\s+[`\"']?([^`\"'\\s]+)[`\"']?",
-            Pattern.CASE_INSENSITIVE
-    );
+    private static final Pattern UPDATE_PATTERN =
+            Pattern.compile("UPDATE\\s+SHEET\\s+`([^`]+)`\\s+SET\\s+(.*?)(?:\\s+WHERE\\s+(.*?))?",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    private static final Pattern CREATE_SHEET_PATTERN = Pattern.compile(
-            "CREATE\\s+SHEET\\s+[`\"']?([^`\"'\\s]+)[`\"']?(?:\\s*\\((.+)\\))?",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-    );
+    private static final Pattern DELETE_PATTERN =
+            Pattern.compile("DELETE\\s+FROM\\s+SHEET\\s+`([^`]+)`(?:\\s+WHERE\\s+(.*?))?",
+                    Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern USE_WORKBOOK_PATTERN = Pattern.compile(
-            "USE\\s+WORKBOOK\\s+[`\"']?([^`\"'\\s]+)[`\"']?",
-            Pattern.CASE_INSENSITIVE
-    );
+    private static final Pattern USE_WORKBOOK_PATTERN =
+            Pattern.compile("USE\\s+WORKBOOK\\s+`([^`]+)`", Pattern.CASE_INSENSITIVE);
 
     @Override
-    public ParsedQuery parse(String sql) throws ParseException {
+    public ParsedQuery parseSQL(String sql) {
         if (sql == null || sql.trim().isEmpty()) {
-            throw new ParseException("SQL cannot be empty");
+            throw new ParseException("SQL statement cannot be empty");
         }
 
-        String trimmedSQL = sql.trim();
-        ParsedQuery query;
+        sql = sql.trim();
+        ParsedQuery query = new ParsedQuery();
+        query.setOriginalSQL(sql);
 
-        if (trimmedSQL.toUpperCase().startsWith("SELECT")) {
-            query = parseSelect(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("INSERT")) {
-            query = parseInsert(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("UPDATE")) {
-            query = parseUpdate(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("DELETE")) {
-            query = parseDelete(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("CREATE WORKBOOK")) {
-            query = parseCreateWorkbook(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("CREATE SHEET")) {
-            query = parseCreateSheet(trimmedSQL);
-        } else if (trimmedSQL.toUpperCase().startsWith("USE WORKBOOK")) {
-            query = parseUseWorkbook(trimmedSQL);
-        } else {
-            throw new ParseException("Unsupported SQL statement: " + trimmedSQL);
+        try {
+            // CREATE WORKBOOK
+            Matcher matcher = CREATE_WORKBOOK_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.CREATE_WORKBOOK);
+                query.setWorkbookName(matcher.group(1));
+                return query;
+            }
+
+            // CREATE SHEET
+            matcher = CREATE_SHEET_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.CREATE_SHEET);
+                query.setSheetName(matcher.group(1));
+                if (matcher.group(2) != null) {
+                    query.setColumnDefinitions(parseColumnDefinitions(matcher.group(2)));
+                }
+                return query;
+            }
+
+            // SELECT
+            matcher = SELECT_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.SELECT);
+                query.setColumns(parseColumns(matcher.group(1)));
+                query.setSheetName(matcher.group(2));
+                if (matcher.group(3) != null) {
+                    query.setConditions(parseWhereConditions(matcher.group(3)));
+                }
+                if (matcher.group(4) != null) {
+                    query.setGroupBy(matcher.group(4).trim());
+                }
+                if (matcher.group(5) != null) {
+                    query.setOrderBy(matcher.group(5).trim());
+                }
+                if (matcher.group(6) != null) {
+                    query.setLimit(Integer.parseInt(matcher.group(6)));
+                }
+                if (matcher.group(7) != null) {
+                    query.setOffset(Integer.parseInt(matcher.group(7)));
+                }
+                return query;
+            }
+
+            // INSERT
+            matcher = INSERT_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.INSERT);
+                query.setSheetName(matcher.group(1));
+                if (matcher.group(2) != null) {
+                    query.setColumns(parseColumns(matcher.group(2)));
+                }
+                query.setValues(parseValues(matcher.group(3), query.getColumns()));
+                return query;
+            }
+
+            // UPDATE
+            matcher = UPDATE_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.UPDATE);
+                query.setSheetName(matcher.group(1));
+                query.setValues(parseSetClause(matcher.group(2)));
+                if (matcher.group(3) != null) {
+                    query.setConditions(parseWhereConditions(matcher.group(3)));
+                }
+                return query;
+            }
+
+            // DELETE
+            matcher = DELETE_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.DELETE);
+                query.setSheetName(matcher.group(1));
+                if (matcher.group(2) != null) {
+                    query.setConditions(parseWhereConditions(matcher.group(2)));
+                }
+                return query;
+            }
+
+            // USE WORKBOOK
+            matcher = USE_WORKBOOK_PATTERN.matcher(sql);
+            if (matcher.find()) {
+                query.setQueryType(QueryType.USE_WORKBOOK);
+                query.setWorkbookName(matcher.group(1));
+                return query;
+            }
+
+            // Handle other simple commands
+            if (sql.toUpperCase().startsWith("SHOW WORKBOOKS")) {
+                query.setQueryType(QueryType.SHOW_WORKBOOKS);
+                return query;
+            }
+
+            if (sql.toUpperCase().startsWith("SHOW SHEETS")) {
+                query.setQueryType(QueryType.SHOW_SHEETS);
+                return query;
+            }
+
+            throw new ParseException("Unsupported SQL statement: " + sql);
+
+        } catch (Exception e) {
+            throw new ParseException("Failed to parse SQL: " + sql, e);
         }
-
-        query.setRawSQL(sql);
-        return query;
     }
 
-    private ParsedQuery parseSelect(String sql) throws ParseException {
-        Matcher matcher = SELECT_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid SELECT statement: " + sql);
+    private List<String> parseColumns(String columnsStr) {
+        if ("*".equals(columnsStr.trim())) {
+            return Arrays.asList("*");
         }
 
-        ParsedQuery query = new ParsedQuery(QueryType.SELECT);
-
-        // Parse columns
-        String columnsStr = matcher.group(1).trim();
-        if ("*".equals(columnsStr)) {
-            query.setColumns(Arrays.asList("*"));
-        } else {
-            query.setColumns(parseColumnList(columnsStr));
+        List<String> columns = new ArrayList<>();
+        String[] parts = columnsStr.split(",");
+        for (String part : parts) {
+            columns.add(part.trim());
         }
-
-        // Parse sheet name
-        query.setSheetName(matcher.group(2));
-
-        // Parse WHERE clause
-        if (matcher.group(3) != null) {
-            query.setConditions(parseWhereClause(matcher.group(3)));
-        }
-
-        // Parse GROUP BY
-        if (matcher.group(4) != null) {
-            query.setGroupBy(matcher.group(4).trim());
-        }
-
-        // Parse ORDER BY
-        if (matcher.group(5) != null) {
-            query.setOrderBy(matcher.group(5).trim());
-        }
-
-        // Parse LIMIT
-        if (matcher.group(6) != null) {
-            query.setLimit(Integer.parseInt(matcher.group(6)));
-        }
-
-        return query;
+        return columns;
     }
 
-    private ParsedQuery parseInsert(String sql) throws ParseException {
-        Matcher matcher = INSERT_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid INSERT statement: " + sql);
+    private Map<String, Object> parseColumnDefinitions(String columnDefs) {
+        Map<String, Object> definitions = new LinkedHashMap<>();
+        String cleanDefs = columnDefs.substring(1, columnDefs.length() - 1); // Remove parentheses
+
+        String[] parts = cleanDefs.split(",");
+        for (String part : parts) {
+            String[] columnDef = part.trim().split("\\s+");
+            if (columnDef.length >= 2) {
+                String columnName = columnDef[0];
+                String columnType = columnDef[1];
+                definitions.put(columnName, columnType);
+            }
         }
-
-        ParsedQuery query = new ParsedQuery(QueryType.INSERT);
-        query.setSheetName(matcher.group(1));
-
-        // Parse columns if specified
-        if (matcher.group(2) != null) {
-            query.setColumns(parseColumnList(matcher.group(2)));
-        }
-
-        // Parse values
-        String valuesStr = matcher.group(3);
-        query.setValues(parseValuesList(valuesStr));
-
-        return query;
+        return definitions;
     }
 
-    private ParsedQuery parseUpdate(String sql) throws ParseException {
-        Matcher matcher = UPDATE_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid UPDATE statement: " + sql);
-        }
-
-        ParsedQuery query = new ParsedQuery(QueryType.UPDATE);
-        query.setSheetName(matcher.group(1));
-
-        // Parse SET clause
-        String setClause = matcher.group(2);
-        query.setValues(parseSetClause(setClause));
-
-        // Parse WHERE clause
-        if (matcher.group(3) != null) {
-            query.setConditions(parseWhereClause(matcher.group(3)));
-        }
-
-        return query;
-    }
-
-    private ParsedQuery parseDelete(String sql) throws ParseException {
-        Matcher matcher = DELETE_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid DELETE statement: " + sql);
-        }
-
-        ParsedQuery query = new ParsedQuery(QueryType.DELETE);
-        query.setSheetName(matcher.group(1));
-
-        // Parse WHERE clause
-        if (matcher.group(2) != null) {
-            query.setConditions(parseWhereClause(matcher.group(2)));
-        }
-
-        return query;
-    }
-
-    private ParsedQuery parseCreateWorkbook(String sql) throws ParseException {
-        Matcher matcher = CREATE_WORKBOOK_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid CREATE WORKBOOK statement: " + sql);
-        }
-
-        ParsedQuery query = new ParsedQuery(QueryType.CREATE_WORKBOOK);
-        query.setWorkbookName(matcher.group(1));
-        return query;
-    }
-
-    private ParsedQuery parseCreateSheet(String sql) throws ParseException {
-        Matcher matcher = CREATE_SHEET_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid CREATE SHEET statement: " + sql);
-        }
-
-        ParsedQuery query = new ParsedQuery(QueryType.CREATE_SHEET);
-        query.setSheetName(matcher.group(1));
-
-        // Parse column definitions if provided
-        if (matcher.group(2) != null) {
-            Map<String, Object> columnDefs = parseColumnDefinitions(matcher.group(2));
-            query.setAdditionalParams(Map.of("columnDefinitions", columnDefs));
-        }
-
-        return query;
-    }
-
-    private ParsedQuery parseUseWorkbook(String sql) throws ParseException {
-        Matcher matcher = USE_WORKBOOK_PATTERN.matcher(sql);
-        if (!matcher.find()) {
-            throw new ParseException("Invalid USE WORKBOOK statement: " + sql);
-        }
-
-        ParsedQuery query = new ParsedQuery(QueryType.USE_WORKBOOK);
-        query.setWorkbookName(matcher.group(1));
-        return query;
-    }
-
-    private List<String> parseColumnList(String columnsStr) {
-        return Arrays.stream(columnsStr.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-    }
-
-    private Map<String, Object> parseWhereClause(String whereClause) {
+    private Map<String, Object> parseWhereConditions(String whereClause) {
         Map<String, Object> conditions = new HashMap<>();
 
-        // Simple parsing for basic conditions
-        String[] parts = whereClause.split("\\s+AND\\s+");
-        for (String part : parts) {
-            String[] condition = part.split("\\s*=\\s*", 2);
-            if (condition.length == 2) {
-                String column = condition[0].trim();
-                String value = condition[1].trim().replaceAll("^['\"]|['\"]$", "");
-                conditions.put(column, value);
+        // Simple parsing for conditions like: column = 'value' AND column2 = 123
+        String[] andParts = whereClause.split("\\s+AND\\s+");
+
+        for (String part : andParts) {
+            String[] equalsParts = part.split("\\s*=\\s*");
+            if (equalsParts.length == 2) {
+                String column = equalsParts[0].trim();
+                String value = equalsParts[1].trim();
+
+                // Remove quotes if present
+                if (value.startsWith("'") && value.endsWith("'")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+
+                // Try to parse as number
+                try {
+                    if (value.contains(".")) {
+                        conditions.put(column, Double.parseDouble(value));
+                    } else {
+                        conditions.put(column, Long.parseLong(value));
+                    }
+                } catch (NumberFormatException e) {
+                    conditions.put(column, value);
+                }
             }
         }
 
         return conditions;
     }
 
-    private Map<String, Object> parseValuesList(String valuesStr) {
+    private Map<String, Object> parseValues(String valuesStr, List<String> columns) {
         Map<String, Object> values = new HashMap<>();
 
-        // Parse comma-separated values
-        String[] valueArray = valuesStr.split(",");
-        for (int i = 0; i < valueArray.length; i++) {
-            String value = valueArray[i].trim().replaceAll("^['\"]|['\"]$", "");
-            values.put("value" + i, parseValue(value));
+        String[] valueParts = valuesStr.split(",");
+
+        if (columns != null && !columns.isEmpty()) {
+            for (int i = 0; i < valueParts.length && i < columns.size(); i++) {
+                String value = valueParts[i].trim();
+
+                // Remove quotes if present
+                if (value.startsWith("'") && value.endsWith("'")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+
+                values.put(columns.get(i), parseValue(value));
+            }
+        } else {
+            for (int i = 0; i < valueParts.length; i++) {
+                String value = valueParts[i].trim();
+
+                // Remove quotes if present
+                if (value.startsWith("'") && value.endsWith("'")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+
+                values.put("value" + i, parseValue(value));
+            }
         }
 
         return values;
@@ -263,12 +253,18 @@ public class AntlrSQLParser implements SQLParser {
     private Map<String, Object> parseSetClause(String setClause) {
         Map<String, Object> values = new HashMap<>();
 
-        String[] assignments = setClause.split(",");
-        for (String assignment : assignments) {
-            String[] parts = assignment.split("\\s*=\\s*", 2);
-            if (parts.length == 2) {
-                String column = parts[0].trim();
-                String value = parts[1].trim().replaceAll("^['\"]|['\"]$", "");
+        String[] setParts = setClause.split(",");
+        for (String part : setParts) {
+            String[] equalsParts = part.split("\\s*=\\s*");
+            if (equalsParts.length == 2) {
+                String column = equalsParts[0].trim();
+                String value = equalsParts[1].trim();
+
+                // Remove quotes if present
+                if (value.startsWith("'") && value.endsWith("'")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+
                 values.put(column, parseValue(value));
             }
         }
@@ -276,23 +272,11 @@ public class AntlrSQLParser implements SQLParser {
         return values;
     }
 
-    private Map<String, Object> parseColumnDefinitions(String columnDefs) {
-        Map<String, Object> definitions = new HashMap<>();
-
-        String[] columns = columnDefs.split(",");
-        for (String column : columns) {
-            String[] parts = column.trim().split("\\s+");
-            if (parts.length >= 2) {
-                String columnName = parts[0];
-                String columnType = parts[1];
-                definitions.put(columnName, columnType);
-            }
+    private Object parseValue(String value) {
+        if (value == null || "NULL".equalsIgnoreCase(value)) {
+            return null;
         }
 
-        return definitions;
-    }
-
-    private Object parseValue(String value) {
         // Try to parse as number
         try {
             if (value.contains(".")) {
@@ -301,7 +285,12 @@ public class AntlrSQLParser implements SQLParser {
                 return Long.parseLong(value);
             }
         } catch (NumberFormatException e) {
-            // Return as string if not a number
+            // Try boolean
+            if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
+                return Boolean.parseBoolean(value);
+            }
+
+            // Default to string
             return value;
         }
     }

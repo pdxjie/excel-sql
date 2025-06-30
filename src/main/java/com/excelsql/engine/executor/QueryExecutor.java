@@ -10,8 +10,5 @@ import java.util.Map;
  * @Date: 2025-06-30-22:40
  */
 public interface QueryExecutor {
-
-    Map<String, Object> execute(ParsedQuery query);
-
-    boolean canExecute(ParsedQuery query);
+    Object executeQuery(ParsedQuery query);
 }

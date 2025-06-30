@@ -1,27 +1,56 @@
-# application.yml
-excel:
-  sql:
-    storage:
-      base-path: /data/excel
-      index-path: /data/indexes
-    cache:
-      workbook-size: 50
-      sheet-size: 500
-      expire-minutes: 60
-    performance:
-      streaming-threshold: 10MB
-      async-enabled: true
-      max-pool-size: 20
-    parser:
-      type: antlr
+server:
+  port: 8080
+  servlet:
+    context-path: /excel-sql
 
 spring:
+  application:
+    name: excel-sql-engine
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
   cache:
+    type: caffeine
+    cache-names: workbooks,sheets,metadata
     caffeine:
       spec: maximumSize=1000,expireAfterWrite=30m
-  task:
-    execution:
-      pool:
-        core-size: 10
-        max-size: 50
-        queue-capacity: 1000
+
+# Excel-SQL Configuration
+excel-sql:
+  cache:
+    max-size: 1000
+    expire-after-write: 30m
+
+  performance:
+    streaming-threshold: 10MB
+    async-threshold: 1000
+    max-memory-usage: 512MB
+
+  storage:
+    base-path: ${user.home}/excel-sql/workbooks
+    index-path: ${user.home}/excel-sql/indexes
+    temp-path: ${java.io.tmpdir}/excel-sql
+
+# Logging Configuration
+logging:
+  level:
+    com.excelsql: DEBUG
+    org.apache.poi: WARN
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/excel-sql.log
+
+# Management endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,cache
+  endpoint:
+    health:
+      show-details: always

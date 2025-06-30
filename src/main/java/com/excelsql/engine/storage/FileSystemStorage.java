@@ -2,6 +2,7 @@ package com.excelsql.engine.storage;
 
 import com.excelsql.config.ExcelSQLConfig;
 import com.excelsql.engine.cache.ExcelCacheManager;
+import com.excelsql.exception.ExcelSQLException;
 import com.excelsql.util.ExcelUtils;
 import com.excelsql.util.TypeConverter;
 import org.apache.poi.ss.usermodel.*;
@@ -35,10 +36,6 @@ public class FileSystemStorage implements ExcelStorage {
     @Resource
     private TypeConverter typeConverter;
 
-    private Path getWorkbookPath(String workbookName) {
-        return Paths.get(config.getStorage().getBasePath(), workbookName);
-    }
-
     @Override
     public boolean createWorkbook(String workbookName) {
         try {
@@ -52,7 +49,7 @@ public class FileSystemStorage implements ExcelStorage {
             Files.createDirectories(workbookPath.getParent());
 
             // Create new workbook
-            try (Workbook workbook = new XSSFWorkbook()) {
+            try (Workbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
                 // Create a default sheet
                 workbook.createSheet("Sheet1");
 
@@ -63,7 +60,7 @@ public class FileSystemStorage implements ExcelStorage {
 
             return true;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create workbook: " + workbookName, e);
+            throw new ExcelSQLException("Failed to create workbook: " + workbookName, e);
         }
     }
 
@@ -87,7 +84,7 @@ public class FileSystemStorage implements ExcelStorage {
 
             return true;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to delete workbook: " + workbookName, e);
+            throw new ExcelSQLException("Failed to delete workbook: " + workbookName, e);
         }
     }
 
@@ -106,7 +103,7 @@ public class FileSystemStorage implements ExcelStorage {
                     .map(path -> path.getFileName().toString())
                     .collect(Collectors.toList());
         } catch (IOException e) {
-            throw new RuntimeException("Failed to list workbooks", e);
+            throw new ExcelSQLException("Failed to list workbooks", e);
         }
     }
 
@@ -150,7 +147,7 @@ public class FileSystemStorage implements ExcelStorage {
                 return true;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to create sheet: " + sheetName, e);
         }
     }
 
@@ -169,7 +166,7 @@ public class FileSystemStorage implements ExcelStorage {
                 return workbook.getSheet(sheetName) != null;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to check sheet existence: " + sheetName, e);
+            throw new ExcelSQLException("Failed to check sheet existence: " + sheetName, e);
         }
     }
 
@@ -198,10 +195,13 @@ public class FileSystemStorage implements ExcelStorage {
                     workbook.write(fos);
                 }
 
+                // Clear cache
+                cacheManager.evictSheetData(workbookName, sheetName);
+
                 return true;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to delete sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to delete sheet: " + sheetName, e);
         }
     }
 
@@ -225,7 +225,7 @@ public class FileSystemStorage implements ExcelStorage {
                 return sheetNames;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to list sheets for workbook: " + workbookName, e);
+            throw new ExcelSQLException("Failed to list sheets for workbook: " + workbookName, e);
         }
     }
 
@@ -233,11 +233,17 @@ public class FileSystemStorage implements ExcelStorage {
     public List<Map<String, Object>> selectData(String workbookName, String sheetName,
                                                 List<String> columns, Map<String, Object> conditions,
                                                 String orderBy, String groupBy, Integer limit, Integer offset) {
+        // Check cache first
+        var cachedData = cacheManager.getSheetData(workbookName, sheetName);
+        if (cachedData != null && conditions == null && orderBy == null && groupBy == null) {
+            return applySelectFilters(cachedData.getData(), columns, limit, offset);
+        }
+
         try {
             Path workbookPath = getWorkbookPath(workbookName);
 
             if (!Files.exists(workbookPath)) {
-                throw new RuntimeException("Workbook not found: " + workbookName);
+                throw new ExcelSQLException("Workbook not found: " + workbookName);
             }
 
             List<Map<String, Object>> result = new ArrayList<>();
@@ -247,7 +253,7 @@ public class FileSystemStorage implements ExcelStorage {
 
                 Sheet sheet = workbook.getSheet(sheetName);
                 if (sheet == null) {
-                    throw new RuntimeException("Sheet not found: " + sheetName);
+                    throw new ExcelSQLException("Sheet not found: " + sheetName);
                 }
 
                 // Get header row
@@ -277,35 +283,30 @@ public class FileSystemStorage implements ExcelStorage {
 
                     // Apply conditions
                     if (matchesConditions(rowData, conditions)) {
-                        // Filter columns
-                        if (columns != null && !columns.contains("*")) {
-                            Map<String, Object> filteredRow = new HashMap<>();
-                            for (String column : columns) {
-                                if (rowData.containsKey(column)) {
-                                    filteredRow.put(column, rowData.get(column));
-                                }
-                            }
-                            result.add(filteredRow);
-                        } else {
-                            result.add(rowData);
-                        }
+                        result.add(rowData);
                     }
                 }
             }
 
-            // Apply ordering
+            // Cache the raw data if no complex operations
+            if (conditions == null && orderBy == null && groupBy == null) {
+                cacheManager.putSheetData(workbookName, sheetName, new ArrayList<>(result));
+            }
+
+            // Apply post-processing
+            if (groupBy != null) {
+                result = applyGroupBy(result, groupBy);
+            }
+
             if (orderBy != null) {
                 result = applySorting(result, orderBy);
             }
 
-            // Apply pagination
-            if (offset != null || limit != null) {
-                result = applyPagination(result, offset != null ? offset : 0, limit);
-            }
+            result = applySelectFilters(result, columns, limit, offset);
 
             return result;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to select data from sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to select data from sheet: " + sheetName, e);
         }
     }
 
@@ -351,7 +352,7 @@ public class FileSystemStorage implements ExcelStorage {
                 if (columns != null) {
                     for (int i = 0; i < columns.size(); i++) {
                         String columnName = columns.get(i);
-                        Object value = values.get("value" + i);
+                        Object value = values.get(columnName);
                         Cell cell = newRow.createCell(i);
                         ExcelUtils.setCellValue(cell, value);
                     }
@@ -369,10 +370,13 @@ public class FileSystemStorage implements ExcelStorage {
                     workbook.write(fos);
                 }
 
+                // Clear cache
+                cacheManager.evictSheetData(workbookName, sheetName);
+
                 return 1; // One row inserted
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to insert data into sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to insert data into sheet: " + sheetName, e);
         }
     }
 
@@ -383,7 +387,7 @@ public class FileSystemStorage implements ExcelStorage {
             Path workbookPath = getWorkbookPath(workbookName);
 
             if (!Files.exists(workbookPath)) {
-                throw new RuntimeException("Workbook not found: " + workbookName);
+                throw new ExcelSQLException("Workbook not found: " + workbookName);
             }
 
             int updatedRows = 0;
@@ -393,7 +397,7 @@ public class FileSystemStorage implements ExcelStorage {
 
                 Sheet sheet = workbook.getSheet(sheetName);
                 if (sheet == null) {
-                    throw new RuntimeException("Sheet not found: " + sheetName);
+                    throw new ExcelSQLException("Sheet not found: " + sheetName);
                 }
 
                 // Get header row
@@ -448,12 +452,14 @@ public class FileSystemStorage implements ExcelStorage {
                     try (FileOutputStream fos = new FileOutputStream(workbookPath.toFile())) {
                         workbook.write(fos);
                     }
+                    // Clear cache
+                    cacheManager.evictSheetData(workbookName, sheetName);
                 }
             }
 
             return updatedRows;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to update data in sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to update data in sheet: " + sheetName, e);
         }
     }
 
@@ -463,7 +469,7 @@ public class FileSystemStorage implements ExcelStorage {
             Path workbookPath = getWorkbookPath(workbookName);
 
             if (!Files.exists(workbookPath)) {
-                throw new RuntimeException("Workbook not found: " + workbookName);
+                throw new ExcelSQLException("Workbook not found: " + workbookName);
             }
 
             int deletedRows = 0;
@@ -473,7 +479,7 @@ public class FileSystemStorage implements ExcelStorage {
 
                 Sheet sheet = workbook.getSheet(sheetName);
                 if (sheet == null) {
-                    throw new RuntimeException("Sheet not found: " + sheetName);
+                    throw new ExcelSQLException("Sheet not found: " + sheetName);
                 }
 
                 // Get header row
@@ -487,7 +493,7 @@ public class FileSystemStorage implements ExcelStorage {
                     headers.add(ExcelUtils.getCellValueAsString(cell));
                 }
 
-                // Collect rows to delete (in reverse order to avoid index issues)
+                // Find rows to delete (in reverse order to avoid index issues)
                 List<Integer> rowsToDelete = new ArrayList<>();
 
                 for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -517,18 +523,41 @@ public class FileSystemStorage implements ExcelStorage {
                     }
                 }
 
-                // Shift remaining rows up
+                // Shift rows up to fill gaps
+                if (!rowsToDelete.isEmpty()) {
+                    int lastRowNum = sheet.getLastRowNum();
+                    for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
+                        if (sheet.getRow(rowIndex) == null) {
+                            // Find next non-null row
+                            int nextRowIndex = rowIndex + 1;
+                            while (nextRowIndex <= lastRowNum && sheet.getRow(nextRowIndex) == null) {
+                                nextRowIndex++;
+                            }
+
+                            if (nextRowIndex <= lastRowNum) {
+                                // Move row up
+                                Row sourceRow = sheet.getRow(nextRowIndex);
+                                Row targetRow = sheet.createRow(rowIndex);
+                                copyRow(sourceRow, targetRow);
+                                sheet.removeRow(sourceRow);
+                            }
+                        }
+                    }
+                }
+
+                // Save workbook if any deletions were made
                 if (deletedRows > 0) {
-                    // Save workbook
                     try (FileOutputStream fos = new FileOutputStream(workbookPath.toFile())) {
                         workbook.write(fos);
                     }
+                    // Clear cache
+                    cacheManager.evictSheetData(workbookName, sheetName);
                 }
             }
 
             return deletedRows;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to delete data from sheet: " + sheetName, e);
+            throw new ExcelSQLException("Failed to delete data from sheet: " + sheetName, e);
         }
     }
 
@@ -546,29 +575,20 @@ public class FileSystemStorage implements ExcelStorage {
             metadata.setPath(workbookPath.toString());
             metadata.setSize(Files.size(workbookPath));
 
-            // Get file timestamps
-            metadata.setCreatedTime(
-                    LocalDateTime.ofInstant(
-                            Files.getLastModifiedTime(workbookPath).toInstant(),
-                            ZoneId.systemDefault()
-                    )
-            );
-            metadata.setModifiedTime(
-                    LocalDateTime.ofInstant(
-                            Files.getLastModifiedTime(workbookPath).toInstant(),
-                            ZoneId.systemDefault()
-                    )
-            );
+            var attrs = Files.readAttributes(workbookPath, "creationTime,lastModifiedTime");
+            metadata.setCreated(LocalDateTime.ofInstant(
+                    ((java.nio.file.attribute.FileTime) attrs.get("creationTime")).toInstant(),
+                    ZoneId.systemDefault()));
+            metadata.setLastModified(LocalDateTime.ofInstant(
+                    ((java.nio.file.attribute.FileTime) attrs.get("lastModifiedTime")).toInstant(),
+                    ZoneId.systemDefault()));
 
-            // Determine format
-            metadata.setFormat(workbookName.endsWith(".csv") ? "csv" : "xlsx");
-
-            // Get sheet names
             metadata.setSheetNames(listSheets(workbookName));
+            metadata.setFormat(workbookName.endsWith(".csv") ? "csv" : "xlsx");
 
             return metadata;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to get workbook metadata: " + workbookName, e);
+            throw new ExcelSQLException("Failed to get workbook metadata: " + workbookName, e);
         }
     }
 
@@ -594,10 +614,11 @@ public class FileSystemStorage implements ExcelStorage {
                 metadata.setWorkbookName(workbookName);
                 metadata.setRowCount(sheet.getLastRowNum() + 1);
 
-                // Get column information
+                // Get column info from header row
                 Row headerRow = sheet.getRow(0);
                 if (headerRow != null) {
                     metadata.setColumnCount(headerRow.getLastCellNum());
+                    metadata.setHasHeader(true);
 
                     List<String> columnNames = new ArrayList<>();
                     Map<String, String> columnTypes = new HashMap<>();
@@ -607,13 +628,13 @@ public class FileSystemStorage implements ExcelStorage {
                         columnNames.add(columnName);
 
                         // Infer column type from first data row
-                        Row firstDataRow = sheet.getRow(1);
-                        if (firstDataRow != null) {
-                            Cell dataCell = firstDataRow.getCell(cell.getColumnIndex());
-                            String type = inferColumnType(dataCell);
-                            columnTypes.put(columnName, type);
-                        } else {
-                            columnTypes.put(columnName, "STRING");
+                        if (sheet.getLastRowNum() > 0) {
+                            Row dataRow = sheet.getRow(1);
+                            if (dataRow != null) {
+                                Cell dataCell = dataRow.getCell(cell.getColumnIndex());
+                                String type = inferColumnType(dataCell);
+                                columnTypes.put(columnName, type);
+                            }
                         }
                     }
 
@@ -621,26 +642,29 @@ public class FileSystemStorage implements ExcelStorage {
                     metadata.setColumnTypes(columnTypes);
                 } else {
                     metadata.setColumnCount(0);
+                    metadata.setHasHeader(false);
                     metadata.setColumnNames(Collections.emptyList());
                     metadata.setColumnTypes(Collections.emptyMap());
                 }
 
-                // Set timestamps (using file modification time as approximation)
-                LocalDateTime fileTime = LocalDateTime.ofInstant(
-                        Files.getLastModifiedTime(workbookPath).toInstant(),
-                        ZoneId.systemDefault()
-                );
-                metadata.setCreatedTime(fileTime);
-                metadata.setModifiedTime(fileTime);
+                var attrs = Files.readAttributes(workbookPath, "lastModifiedTime");
+                metadata.setLastModified(LocalDateTime.ofInstant(
+                        ((java.nio.file.attribute.FileTime) attrs.get("lastModifiedTime")).toInstant(),
+                        ZoneId.systemDefault()));
 
                 return metadata;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to get sheet metadata: " + sheetName, e);
+            throw new ExcelSQLException("Failed to get sheet metadata: " + sheetName, e);
         }
     }
 
-    // Helper methods
+    // ========================= Helper Methods =========================
+
+    private Path getWorkbookPath(String workbookName) {
+        return Paths.get(config.getStorage().getBasePath(), workbookName);
+    }
+
     private boolean matchesConditions(Map<String, Object> rowData, Map<String, Object> conditions) {
         if (conditions == null || conditions.isEmpty()) {
             return true;
@@ -660,10 +684,13 @@ public class FileSystemStorage implements ExcelStorage {
     }
 
     private List<Map<String, Object>> applySorting(List<Map<String, Object>> data, String orderBy) {
-        // Simple sorting implementation - can be enhanced
-        String[] parts = orderBy.split(" ");
+        if (orderBy == null || orderBy.trim().isEmpty()) {
+            return data;
+        }
+
+        String[] parts = orderBy.trim().split("\\s+");
         String columnName = parts[0];
-        boolean ascending = parts.length == 1 || "ASC".equalsIgnoreCase(parts[1]);
+        boolean ascending = parts.length < 2 || !"DESC".equalsIgnoreCase(parts[1]);
 
         return data.stream()
                 .sorted((a, b) -> {
@@ -674,22 +701,100 @@ public class FileSystemStorage implements ExcelStorage {
                     if (valueA == null) return ascending ? -1 : 1;
                     if (valueB == null) return ascending ? 1 : -1;
 
-                    @SuppressWarnings("unchecked")
-                    int result = ((Comparable<Object>) valueA).compareTo(valueB);
-                    return ascending ? result : -result;
+                    int comparison = 0;
+                    if (valueA instanceof Comparable && valueB instanceof Comparable) {
+                        try {
+                            comparison = ((Comparable) valueA).compareTo(valueB);
+                        } catch (ClassCastException e) {
+                            comparison = valueA.toString().compareTo(valueB.toString());
+                        }
+                    } else {
+                        comparison = valueA.toString().compareTo(valueB.toString());
+                    }
+
+                    return ascending ? comparison : -comparison;
                 })
                 .collect(Collectors.toList());
     }
 
-    private List<Map<String, Object>> applyPagination(List<Map<String, Object>> data, int offset, Integer limit) {
-        int fromIndex = Math.max(0, offset);
-        int toIndex = limit != null ? Math.min(data.size(), fromIndex + limit) : data.size();
+    private List<Map<String, Object>> applySelectFilters(List<Map<String, Object>> data,
+                                                         List<String> columns, Integer limit, Integer offset) {
+        List<Map<String, Object>> result = data;
 
-        if (fromIndex >= data.size()) {
+        // Apply column filtering
+        if (columns != null && !columns.contains("*")) {
+            result = result.stream()
+                    .map(row -> {
+                        Map<String, Object> filteredRow = new HashMap<>();
+                        for (String column : columns) {
+                            if (row.containsKey(column)) {
+                                filteredRow.put(column, row.get(column));
+                            }
+                        }
+                        return filteredRow;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Apply pagination
+        if (offset != null || limit != null) {
+            result = applyPagination(result, offset != null ? offset : 0, limit);
+        }
+
+        return result;
+    }
+
+    private List<Map<String, Object>> applyPagination(List<Map<String, Object>> data, int offset, Integer limit) {
+        int start = Math.max(0, offset);
+        int end = limit != null ? Math.min(data.size(), start + limit) : data.size();
+
+        if (start >= data.size()) {
             return Collections.emptyList();
         }
 
-        return data.subList(fromIndex, toIndex);
+        return data.subList(start, end);
+    }
+
+    private List<Map<String, Object>> applyGroupBy(List<Map<String, Object>> data, String groupBy) {
+        // Simple group by implementation - groups by column value and counts
+        Map<Object, List<Map<String, Object>>> groups = data.stream()
+                .collect(Collectors.groupingBy(row -> row.get(groupBy)));
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<Object, List<Map<String, Object>>> entry : groups.entrySet()) {
+            Map<String, Object> groupResult = new HashMap<>();
+            groupResult.put(groupBy, entry.getKey());
+            groupResult.put("COUNT(*)", entry.getValue().size());
+            result.add(groupResult);
+        }
+
+        return result;
+    }
+
+    private void copyRow(Row sourceRow, Row targetRow) {
+        for (Cell sourceCell : sourceRow) {
+            Cell targetCell = targetRow.createCell(sourceCell.getColumnIndex());
+
+            switch (sourceCell.getCellType()) {
+                case STRING:
+                    targetCell.setCellValue(sourceCell.getStringCellValue());
+                    break;
+                case NUMERIC:
+                    targetCell.setCellValue(sourceCell.getNumericCellValue());
+                    break;
+                case BOOLEAN:
+                    targetCell.setCellValue(sourceCell.getBooleanCellValue());
+                    break;
+                case FORMULA:
+                    targetCell.setCellFormula(sourceCell.getCellFormula());
+                    break;
+                case BLANK:
+                    targetCell.setBlank();
+                    break;
+                default:
+                    break;
+            }
+        }
     }
 
     private String inferColumnType(Cell cell) {
@@ -702,12 +807,16 @@ public class FileSystemStorage implements ExcelStorage {
                 if (DateUtil.isCellDateFormatted(cell)) {
                     return "DATE";
                 } else {
-                    return "NUMERIC";
+                    double value = cell.getNumericCellValue();
+                    if (value == Math.floor(value)) {
+                        return "INTEGER";
+                    } else {
+                        return "DECIMAL";
+                    }
                 }
             case BOOLEAN:
                 return "BOOLEAN";
-            case FORMULA:
-                return "FORMULA";
+            case STRING:
             default:
                 return "STRING";
         }

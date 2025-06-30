@@ -17,94 +17,88 @@ import java.util.Map;
 @Component
 public class DDLExecutor implements QueryExecutor {
 
-    @Resource
+    @Autowired
     private ExcelStorage excelStorage;
 
-    @Override
-    public boolean canExecute(ParsedQuery query) {
-        return query.getQueryType() == QueryType.CREATE_WORKBOOK ||
-                query.getQueryType() == QueryType.CREATE_SHEET ||
-                query.getQueryType() == QueryType.DROP_WORKBOOK ||
-                query.getQueryType() == QueryType.DROP_SHEET ||
-                query.getQueryType() == QueryType.USE_WORKBOOK;
-    }
+    private String currentWorkbook;
 
     @Override
-    public Map<String, Object> execute(ParsedQuery query) {
-        Map<String, Object> result = new HashMap<>();
-
+    public Object executeQuery(ParsedQuery query) {
         switch (query.getQueryType()) {
             case CREATE_WORKBOOK:
-                return executeCreateWorkbook(query);
+                return createWorkbook(query);
             case CREATE_SHEET:
-                return executeCreateSheet(query);
+                return createSheet(query);
+            case DROP_WORKBOOK:
+                return dropWorkbook(query);
+            case DROP_SHEET:
+                return dropSheet(query);
             case USE_WORKBOOK:
-                return executeUseWorkbook(query);
+                return useWorkbook(query);
+            case SHOW_WORKBOOKS:
+                return showWorkbooks();
+            case SHOW_SHEETS:
+                return showSheets();
             default:
-                result.put("success", false);
-                result.put("message", "Unsupported DDL operation");
-                break;
+                throw new UnsupportedOperationException("Unsupported DDL operation: " + query.getQueryType());
         }
-
-        return result;
     }
 
-    private Map<String, Object> executeCreateWorkbook(ParsedQuery query) {
-        Map<String, Object> result = new HashMap<>();
-
-        try {
-            boolean created = excelStorage.createWorkbook(query.getWorkbookName());
-            result.put("success", created);
-            result.put("message", created ? "Workbook created successfully" : "Workbook already exists");
-            result.put("workbook", query.getWorkbookName());
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "Failed to create workbook: " + e.getMessage());
-        }
-
-        return result;
+    private Object createWorkbook(ParsedQuery query) {
+        boolean created = excelStorage.createWorkbook(query.getWorkbookName());
+        return created ? "Workbook created successfully" : "Workbook already exists";
     }
 
-    private Map<String, Object> executeCreateSheet(ParsedQuery query) {
-        Map<String, Object> result = new HashMap<>();
-
-        try {
-            Map<String, Object> columnDefs = null;
-            if (query.getAdditionalParams() != null) {
-                columnDefs = (Map<String, Object>) query.getAdditionalParams().get("columnDefinitions");
-            }
-
-            boolean created = excelStorage.createSheet(query.getWorkbookName(), query.getSheetName(), columnDefs);
-            result.put("success", created);
-            result.put("message", created ? "Sheet created successfully" : "Sheet already exists");
-            result.put("sheet", query.getSheetName());
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "Failed to create sheet: " + e.getMessage());
+    private Object createSheet(ParsedQuery query) {
+        String workbookName = query.getWorkbookName() != null ? query.getWorkbookName() : currentWorkbook;
+        if (workbookName == null) {
+            throw new RuntimeException("No workbook selected. Use 'USE WORKBOOK' command first.");
         }
 
-        return result;
+        boolean created = excelStorage.createSheet(workbookName, query.getSheetName(), query.getColumnDefinitions());
+        return created ? "Sheet created successfully" : "Sheet already exists";
     }
 
-    private Map<String, Object> executeUseWorkbook(ParsedQuery query) {
-        Map<String, Object> result = new HashMap<>();
+    private Object dropWorkbook(ParsedQuery query) {
+        boolean deleted = excelStorage.deleteWorkbook(query.getWorkbookName());
+        return deleted ? "Workbook deleted successfully" : "Workbook not found";
+    }
 
-        try {
-            boolean exists = excelStorage.workbookExists(query.getWorkbookName());
-            if (exists) {
-                // Set current workbook context
-                result.put("success", true);
-                result.put("message", "Using workbook: " + query.getWorkbookName());
-                result.put("currentWorkbook", query.getWorkbookName());
-            } else {
-                result.put("success", false);
-                result.put("message", "Workbook does not exist: " + query.getWorkbookName());
-            }
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "Failed to use workbook: " + e.getMessage());
+    private Object dropSheet(ParsedQuery query) {
+        String workbookName = query.getWorkbookName() != null ? query.getWorkbookName() : currentWorkbook;
+        if (workbookName == null) {
+            throw new RuntimeException("No workbook selected. Use 'USE WORKBOOK' command first.");
         }
 
-        return result;
+        boolean deleted = excelStorage.deleteSheet(workbookName, query.getSheetName());
+        return deleted ? "Sheet deleted successfully" : "Sheet not found";
+    }
+
+    private Object useWorkbook(ParsedQuery query) {
+        if (excelStorage.workbookExists(query.getWorkbookName())) {
+            currentWorkbook = query.getWorkbookName();
+            return "Using workbook: " + currentWorkbook;
+        } else {
+            throw new RuntimeException("Workbook not found: " + query.getWorkbookName());
+        }
+    }
+
+    private Object showWorkbooks() {
+        return excelStorage.listWorkbooks();
+    }
+
+    private Object showSheets() {
+        if (currentWorkbook == null) {
+            throw new RuntimeException("No workbook selected. Use 'USE WORKBOOK' command first.");
+        }
+        return excelStorage.listSheets(currentWorkbook);
+    }
+
+    public String getCurrentWorkbook() {
+        return currentWorkbook;
+    }
+
+    public void setCurrentWorkbook(String workbook) {
+        this.currentWorkbook = workbook;
     }
 }

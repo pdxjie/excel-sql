@@ -25,15 +25,11 @@ public interface ExcelStorage {
     List<Map<String, Object>> selectData(String workbookName, String sheetName,
                                          List<String> columns, Map<String, Object> conditions,
                                          String orderBy, String groupBy, Integer limit, Integer offset);
-
     int insertData(String workbookName, String sheetName,
                    List<String> columns, Map<String, Object> values);
-
     int updateData(String workbookName, String sheetName,
                    Map<String, Object> values, Map<String, Object> conditions);
-
-    int deleteData(String workbookName, String sheetName,
-                   Map<String, Object> conditions);
+    int deleteData(String workbookName, String sheetName, Map<String, Object> conditions);
 
     // Metadata operations
     WorkbookMetadata getWorkbookMetadata(String workbookName);
