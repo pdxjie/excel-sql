@@ -8,6 +8,7 @@ import com.excelsql.util.TypeConverter;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -27,11 +28,11 @@ import java.util.stream.Collectors;
 @Component
 public class FileSystemStorage implements ExcelStorage {
 
-    @Autowired
+    @Resource
     private ExcelSQLConfig config;
 
-    @Resource
-    private ExcelCacheManager cacheManager;
+    @Autowired
+    private ExcelCacheManager excelCacheManager;
 
     @Resource
     private TypeConverter typeConverter;
@@ -80,7 +81,7 @@ public class FileSystemStorage implements ExcelStorage {
             }
 
             Files.delete(workbookPath);
-            cacheManager.evictWorkbook(workbookName);
+            excelCacheManager.evictWorkbook(workbookName);
 
             return true;
         } catch (IOException e) {
@@ -196,7 +197,7 @@ public class FileSystemStorage implements ExcelStorage {
                 }
 
                 // Clear cache
-                cacheManager.evictSheetData(workbookName, sheetName);
+                excelCacheManager.evictSheetData(workbookName, sheetName);
 
                 return true;
             }
@@ -234,7 +235,7 @@ public class FileSystemStorage implements ExcelStorage {
                                                 List<String> columns, Map<String, Object> conditions,
                                                 String orderBy, String groupBy, Integer limit, Integer offset) {
         // Check cache first
-        var cachedData = cacheManager.getSheetData(workbookName, sheetName);
+        var cachedData = excelCacheManager.getSheetData(workbookName, sheetName);
         if (cachedData != null && conditions == null && orderBy == null && groupBy == null) {
             return applySelectFilters(cachedData.getData(), columns, limit, offset);
         }
@@ -290,7 +291,7 @@ public class FileSystemStorage implements ExcelStorage {
 
             // Cache the raw data if no complex operations
             if (conditions == null && orderBy == null && groupBy == null) {
-                cacheManager.putSheetData(workbookName, sheetName, new ArrayList<>(result));
+                excelCacheManager.putSheetData(workbookName, sheetName, new ArrayList<>(result));
             }
 
             // Apply post-processing
@@ -371,7 +372,7 @@ public class FileSystemStorage implements ExcelStorage {
                 }
 
                 // Clear cache
-                cacheManager.evictSheetData(workbookName, sheetName);
+                excelCacheManager.evictSheetData(workbookName, sheetName);
 
                 return 1; // One row inserted
             }
@@ -453,7 +454,7 @@ public class FileSystemStorage implements ExcelStorage {
                         workbook.write(fos);
                     }
                     // Clear cache
-                    cacheManager.evictSheetData(workbookName, sheetName);
+                    excelCacheManager.evictSheetData(workbookName, sheetName);
                 }
             }
 
@@ -551,7 +552,7 @@ public class FileSystemStorage implements ExcelStorage {
                         workbook.write(fos);
                     }
                     // Clear cache
-                    cacheManager.evictSheetData(workbookName, sheetName);
+                    excelCacheManager.evictSheetData(workbookName, sheetName);
                 }
             }
 

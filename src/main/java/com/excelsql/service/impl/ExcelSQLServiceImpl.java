@@ -37,7 +37,7 @@ public class ExcelSQLServiceImpl implements ExcelSQLService {
     private DQLExecutor dqlExecutor;
 
     @Autowired
-    private ExcelCacheManager cacheManager;
+    private ExcelCacheManager excelCacheManager;
 
     private final AtomicLong queryCount = new AtomicLong(0);
     private final AtomicLong totalExecutionTime = new AtomicLong(0);
@@ -80,7 +80,7 @@ public class ExcelSQLServiceImpl implements ExcelSQLService {
 
     @Override
     public void clearCache() {
-        cacheManager.clearAll();
+        excelCacheManager.clearAll();
     }
 
     private QueryExecutor getExecutor(QueryType queryType) {

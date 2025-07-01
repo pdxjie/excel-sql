@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.Resource;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,7 +30,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ExcelCacheManager {
 
-    @Autowired
+    @Resource
     private ExcelSQLConfig config;
 
     // 工作簿元数据缓存 - 使用ConcurrentHashMap保证线程安全
