@@ -327,7 +327,7 @@ public class ExcelCacheManager {
     }
 
     private long estimateMemoryUsage() {
-        // 简单估算内存使用量（实际项目中可以使用更精确的方法）
+        // 简单估算内存使用量
         long workbookMemory = workbookCache.size() * 1024; // 假设每个工作簿缓存1KB
         long sheetDataMemory = sheetDataCache.values().stream()
                 .mapToLong(sheetData -> sheetData.getData().size() * 256) // 假设每行256字节

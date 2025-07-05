@@ -1,5 +1,6 @@
 package com.excelsql.engine.storage;
 
+import cn.hutool.core.collection.CollUtil;
 import com.excelsql.config.ExcelSQLConfig;
 import com.excelsql.engine.cache.ExcelCacheManager;
 import com.excelsql.exception.ExcelSQLException;
@@ -349,7 +350,7 @@ public class FileSystemStorage implements ExcelStorage {
                     newRow = sheet.createRow(nextRowIndex);
                 }
 
-                // Insert data
+                // 插入数据
                 if (columns != null) {
                     for (int i = 0; i < columns.size(); i++) {
                         String columnName = columns.get(i);
@@ -358,11 +359,20 @@ public class FileSystemStorage implements ExcelStorage {
                         ExcelUtils.setCellValue(cell, value);
                     }
                 } else {
+                    final List<Map.Entry<String, Object>> valueEntities = values.entrySet()
+                            .stream()
+                            .sorted(Comparator.comparingInt(entry -> Integer.parseInt(entry.getKey().replaceAll("[^0-9]", ""))))
+                            .collect(Collectors.toList());
                     // Insert values in order
+                    final Row row = sheet.getRow(0);
+                    final short lastCellNum = row.getLastCellNum();
+                    if (lastCellNum != valueEntities.size()) {
+                        throw new ExcelSQLException("Sheet table field mismatch");
+                    }
                     int colIndex = 0;
-                    for (Object value : values.values()) {
+                    for (Map.Entry<String, Object> valueEntity : valueEntities) {
                         Cell cell = newRow.createCell(colIndex++);
-                        ExcelUtils.setCellValue(cell, value);
+                        ExcelUtils.setCellValue(cell, valueEntity.getValue());
                     }
                 }
 
@@ -723,7 +733,7 @@ public class FileSystemStorage implements ExcelStorage {
         List<Map<String, Object>> result = data;
 
         // Apply column filtering
-        if (columns != null && !columns.contains("*")) {
+        if (CollUtil.isNotEmpty(columns) && !columns.contains("*")) {
             result = result.stream()
                     .map(row -> {
                         Map<String, Object> filteredRow = new HashMap<>();

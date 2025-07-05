@@ -76,7 +76,7 @@ public class ExcelSQLServiceImpl implements ExcelSQLService {
 
         } catch (Exception e) {
             // 如果查询执行失败，抛出运行时异常
-            throw new RuntimeException("Failed to execute SQL: " + sql, e);
+            throw new RuntimeException("Failed to execute SQL: " + sql + '('+ e.getMessage() +')');
         }
     }
 

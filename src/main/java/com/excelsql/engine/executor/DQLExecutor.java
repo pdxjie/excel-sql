@@ -3,7 +3,6 @@ package com.excelsql.engine.executor;
 import com.excelsql.engine.parser.model.ParsedQuery;
 import com.excelsql.engine.parser.model.QueryType;
 import com.excelsql.engine.storage.ExcelStorage;
-import com.excelsql.engine.function.FunctionRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +24,7 @@ public class DQLExecutor implements QueryExecutor {
 
     @Override
     public Object executeQuery(ParsedQuery query) {
-        if (query.getQueryType() != com.excelsql.engine.parser.model.QueryType.SELECT) {
+        if (query.getQueryType() != QueryType.SELECT) {
             throw new UnsupportedOperationException("Unsupported DQL operation: " + query.getQueryType());
         }
 
