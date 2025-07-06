@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:;">
+  <link rel="icon" href="/favicon.ico">
+  <title>Excel SQL Desktop</title>
+  <style>
+    /* 立即应用主题样式，避免FOUC */
+    html {
+      visibility: hidden;
+    }
+    
+    html.theme-ready {
+      visibility: visible;
+    }
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background-color: #f8f9fa; /* 默认浅色背景 */
+    }
+    
+    /* 预加载样式，避免闪白 */
+    .dark-theme {
+      background-color: #121212;
+      color: #e1e1e1;
+    }
+    
+    #app {
+      height: 100%;
+      width: 100%;
+      background-color: inherit;
+    }
+    
+    /* 路由切换过渡 */
+    .page-transition-enter-active,
+    .page-transition-leave-active {
+      transition: opacity 0.2s ease;
+    }
+    
+    .page-transition-enter-from,
+    .page-transition-leave-to {
+      opacity: 0;
+    }
+    
+    /* 添加一个简单的加载动画 */
+    .app-loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: inherit;
+      z-index: 9999;
+    }
+    
+    .app-loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(66, 99, 235, 0.2);
+      border-radius: 50%;
+      border-top-color: #4263eb;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+  <script>
+    // 在DOM加载前应用主题，避免闪白
+    (function() {
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      
+      // 立即应用主题到HTML元素
+      if (savedTheme === 'dark' || (savedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark-theme');
+        document.documentElement.style.backgroundColor = '#121212';
+        document.documentElement.style.color = '#e1e1e1';
+      } else {
+        document.documentElement.style.backgroundColor = '#f8f9fa';
+      }
+      
+      // 监听DOM内容加载
+      document.addEventListener('DOMContentLoaded', function() {
+        // 标记主题已准备好，显示内容
+        document.documentElement.classList.add('theme-ready');
+      });
+      
+      // 监听系统主题变化
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (savedTheme === 'system') {
+          if (e.matches) {
+            document.documentElement.classList.add('dark-theme');
+            document.documentElement.style.backgroundColor = '#121212';
+            document.documentElement.style.color = '#e1e1e1';
+          } else {
+            document.documentElement.classList.remove('dark-theme');
+            document.documentElement.style.backgroundColor = '#f8f9fa';
+            document.documentElement.style.color = '#000000';
+          }
+        }
+      });
+    })();
+  </script>
+</head>
+<body>
+  <div id="app">
+    <!-- 加载动画 -->
+    <div class="app-loading">
+      <div class="app-loading-spinner"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/renderer/main.ts"></script>
+</body>
+</html> 
