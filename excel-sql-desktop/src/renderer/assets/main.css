@@ -1,0 +1,69 @@
+:root {
+  --primary-color: #1890ff;
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --error-color: #f5222d;
+  --font-size-base: 14px;
+  --heading-color: rgba(0, 0, 0, 0.85);
+  --text-color: rgba(0, 0, 0, 0.65);
+  --text-color-secondary: rgba(0, 0, 0, 0.45);
+  --disabled-color: rgba(0, 0, 0, 0.25);
+  --border-radius-base: 2px;
+  --border-color-base: #d9d9d9;
+  --box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Dark theme variables */
+.dark-theme {
+  --primary-color: #177ddc;
+  --success-color: #49aa19;
+  --warning-color: #d89614;
+  --error-color: #a61d24;
+  --heading-color: rgba(255, 255, 255, 0.85);
+  --text-color: rgba(255, 255, 255, 0.65);
+  --text-color-secondary: rgba(255, 255, 255, 0.45);
+  --disabled-color: rgba(255, 255, 255, 0.25);
+  --border-color-base: #434343;
+  --box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.45);
+  background-color: #141414;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* Utility classes */
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.overflow-auto {
+  overflow: auto;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.p-1 {
+  padding: 8px;
+}
+
+.p-2 {
+  padding: 16px;
+}
+
+.m-1 {
+  margin: 8px;
+}
+
+.m-2 {
+  margin: 16px;
+} 

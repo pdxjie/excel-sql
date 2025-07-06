@@ -1,0 +1,392 @@
+:root {
+  /* 主色调 - 更专业的配色方案 */
+  --primary-color: #1890ff;
+  --primary-color-hover: #40a9ff;
+  --primary-color-active: #096dd9;
+  --primary-color-light: #e6f7ff;
+
+  /* 辅助色 */
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --error-color: #f5222d;
+  --info-color: #1890ff;
+
+  /* 中性色 */
+  --text-color: rgba(0, 0, 0, 0.85);
+  --text-color-secondary: rgba(0, 0, 0, 0.45);
+  --disabled-color: rgba(0, 0, 0, 0.25);
+  --border-color: #e9ecef;
+  --divider-color: rgba(0, 0, 0, 0.06);
+  --background-color: #f8f9fa;
+  --component-background: #fff;
+
+  /* 布局 */
+  --header-height: 64px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 80px;
+  --border-radius-base: 6px;
+  --border-radius-sm: 4px;
+  --box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --box-shadow-card: 0 1px 2px -2px rgba(0, 0, 0, 0.12), 
+                     0 3px 6px 0 rgba(0, 0, 0, 0.08), 
+                     0 5px 12px 4px rgba(0, 0, 0, 0.05);
+
+  /* 动画 */
+  --animation-duration-base: 0.2s;
+  --animation-duration-slow: 0.3s;
+  --transition-base: all var(--animation-duration-base) cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* 深色主题 */
+.dark-theme {
+  --primary-color: #177ddc;
+  --primary-color-hover: #3c9ae8;
+  --primary-color-active: #0e6dc5;
+  --primary-color-light: #111a2c;
+
+  --text-color: rgba(255, 255, 255, 0.85);
+  --text-color-secondary: rgba(255, 255, 255, 0.45);
+  --disabled-color: rgba(255, 255, 255, 0.25);
+  --border-color: #303030;
+  --divider-color: rgba(255, 255, 255, 0.06);
+  --background-color: #141414;
+  --component-background: #1f1f1f;
+}
+
+/* 全局样式 */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 添加全局过渡效果 */
+html {
+  background-color: var(--background-color);
+  transition: background-color 0.3s ease;
+}
+
+/* 确保路由视图有背景色 */
+.router-view-container {
+  background-color: var(--background-color);
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* 确保所有主要容器有背景色 */
+.ant-layout, 
+.ant-layout-content,
+.ant-layout-header,
+.ant-layout-footer,
+.ant-layout-sider {
+  background-color: var(--component-background);
+  transition: background-color 0.3s ease;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark-theme ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dark-theme ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 动画效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--animation-duration-base);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform var(--animation-duration-base);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(10px);
+  opacity: 0;
+}
+
+/* 卡片悬停效果 */
+.hover-card {
+  transition: var(--transition-base);
+}
+
+.hover-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--box-shadow-card);
+}
+
+/* 按钮动效 */
+.btn-pulse {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-pulse::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%, -50%);
+  transform-origin: 50% 50%;
+}
+
+.btn-pulse:focus:not(:active)::after {
+  animation: ripple 0.6s ease-out;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0, 0) translate(-50%, -50%);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(20, 20) translate(-50%, -50%);
+    opacity: 0;
+  }
+}
+
+/* 常用工具类 */
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+.h-100 {
+  height: 100%;
+}
+
+.m-0 {
+  margin: 0;
+}
+
+.p-0 {
+  padding: 0;
+}
+
+.mt-1 {
+  margin-top: 8px;
+}
+
+.mb-1 {
+  margin-bottom: 8px;
+}
+
+.ml-1 {
+  margin-left: 8px;
+}
+
+.mr-1 {
+  margin-right: 8px;
+}
+
+.mt-2 {
+  margin-top: 16px;
+}
+
+.mb-2 {
+  margin-bottom: 16px;
+}
+
+.ml-2 {
+  margin-left: 16px;
+}
+
+.mr-2 {
+  margin-right: 16px;
+}
+
+.p-1 {
+  padding: 8px;
+}
+
+.p-2 {
+  padding: 16px;
+}
+
+.p-3 {
+  padding: 24px;
+}
+
+/* 自定义组件样式覆盖 */
+.ant-btn {
+  border-radius: var(--border-radius-base);
+}
+
+.ant-btn-primary {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background-color: var(--primary-color-hover);
+  border-color: var(--primary-color-hover);
+}
+
+.ant-card {
+  border-radius: var(--border-radius-base);
+  overflow: hidden;
+  transition: var(--transition-base);
+}
+
+.ant-card:hover {
+  box-shadow: var(--box-shadow-card);
+}
+
+.ant-menu-dark {
+  background-color: var(--primary-color) !important;
+}
+
+.ant-layout-sider-dark {
+  background-color: #2b3a67 !important;
+}
+
+.ant-layout-header {
+  background-color: var(--primary-color) !important;
+  padding: 0 24px !important;
+}
+
+/* 页面过渡动画 */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+}
+
+/* 响应式容器 */
+.responsive-container {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+@media (max-width: 768px) {
+  .responsive-container {
+    padding: 0 12px;
+  }
+}
+
+/* 阴影效果 */
+.shadow-sm {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.shadow {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* 暗色模式下的阴影 */
+.dark-theme .shadow-sm,
+.dark-theme .shadow,
+.dark-theme .shadow-md,
+.dark-theme .shadow-lg {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 表单元素样式 */
+.ant-input,
+.ant-select-selector {
+  border-radius: var(--border-radius-base) !important;
+}
+
+/* 表格样式 */
+.ant-table {
+  border-radius: var(--border-radius-base);
+  overflow: hidden;
+}
+
+/* 卡片样式 */
+.ant-card-hoverable {
+  cursor: pointer;
+}
+
+/* 标签页样式 */
+.ant-tabs-tab {
+  transition: all 0.2s;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--primary-color);
+}
+
+.ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--primary-color);
+}
+
+.ant-tabs-ink-bar {
+  background: var(--primary-color);
+} 
