@@ -15,3 +15,10 @@ buildNumber.properties
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+.idea/**
+excel-sql-api/.idea/**
+excel-sql-api/target/**
+
+excel-sql-desktop/.idea/**
+excel-sql-desktop/node_modules/**
